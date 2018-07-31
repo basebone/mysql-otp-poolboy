@@ -22,11 +22,16 @@
 
 -export([add_pool/3,
          checkin/2, checkout/1,
+         checkout_with_call_timeout/2,
          child_spec/3,
          execute/3, execute/4,
+         execute_with_call_timeout/4, execute_with_call_timeout/5,
          query/2, query/3, query/4,
+         query_with_call_timeout/3, query_with_call_timeout/4, query_with_call_timeout/5,
          transaction/2, transaction/3, transaction/4,
-         with/2]).
+         transaction_with_call_timeout/3, transaction_with_call_timeout/4, transaction_with_call_timeout/5,
+         with/2,
+         with_with_call_timeout/3]).
 
 %% @doc Adds a pool to the started mysql_poolboy application.
 add_pool(PoolName, PoolArgs, MysqlArgs) ->
@@ -41,6 +46,10 @@ checkin(PoolName, Connection) ->
 %% @doc Checks out a mysql connection from a given pool.
 checkout(PoolName) ->
     poolboy:checkout(PoolName).
+
+%% @doc Checks out a mysql connection from a given pool with worker acquire timeout.
+checkout_with_call_timeout(PoolName, CallTimeout) ->
+    poolboy:checkout(PoolName, CallTimeout).
 
 %% @doc Creates a supvervisor:child_spec. When the need to
 %% supervise the pools in another way.
@@ -68,6 +77,18 @@ execute(PoolName, StatementRef, Params, Timeout) ->
         mysql:execute(MysqlConn, StatementRef, Params, Timeout)
     end).
 
+%% @doc Execute a mysql prepared statement with given params with worker acquire timeout.
+execute_with_call_timeout(PoolName, StatementRef, Params, CallTimeout) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:execute(MysqlConn, StatementRef, Params)
+    end, CallTimeout).
+
+%% @doc Execute a mysql prepared statement with given params and timeout with worker acquire timeout.
+execute_with_call_timeout(PoolName, StatementRef, Params, Timeout, CallTimeout) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:execute(MysqlConn, StatementRef, Params, Timeout)
+    end, CallTimeout).
+
 %% @doc Executes a query to a mysql connection in a given pool.
 query(PoolName, Query) ->
     poolboy:transaction(PoolName, fun(MysqlConn) ->
@@ -88,6 +109,26 @@ query(PoolName, Query, Params, Timeout) ->
         mysql:query(MysqlConn, Query, Params, Timeout)
     end).
 
+%% @doc Executes a query to a mysql connection in a given pool with worker acquire timeout.
+query_with_call_timeout(PoolName, Query, CallTimeout) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:query(MysqlConn, Query)
+    end, CallTimeout).
+
+%% @doc Executes a query to a mysql connection in a given pool with either
+%% list of query parameters or a timeout value and a worker acquire timeout.
+query_with_call_timeout(PoolName, Query, ParamsOrTimeout, CallTimeout) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:query(MysqlConn, Query, ParamsOrTimeout)
+    end, CallTimeout).
+
+%% @doc Executes a query to a mysql connection in a given pool with both
+%% a list of query parameters and a timeout value and a worker acquire timeout.
+query_with_call_timeout(PoolName, Query, Params, Timeout, CallTimeout) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:query(MysqlConn, Query, Params, Timeout)
+    end, CallTimeout).
+
 %% @doc Wrapper to poolboy:transaction/2. Since it is not a mysql transaction.
 %% Example instead of:
 %% Conn = mysql_poolboy:checkout(mypool),
@@ -100,6 +141,19 @@ query(PoolName, Query, Params, Timeout) ->
 %% mysql_poolboy:with(mypool, fun (Conn) -> mysql:query(Conn, "SELECT...") end).
 with(PoolName, Fun) when is_function(Fun, 1) ->
     poolboy:transaction(PoolName, Fun).
+
+%% @doc Wrapper to poolboy:transaction/2 with acquire worker timeout. Since it is not a mysql transaction.
+%% Example instead of:
+%% Conn = mysql_poolboy:checkout(mypool),
+%% try
+%%     mysql:query(Conn, "SELECT...")
+%%  after
+%%     mysql_poolboy:checkin(mypool, Conn)
+%%  end.
+%%
+%% mysql_poolboy:with(mypool, fun (Conn) -> mysql:query(Conn, "SELECT...") end).
+with_with_call_timeout(PoolName, Fun, CallTimeout) when is_function(Fun, 1) ->
+    poolboy:transaction(PoolName, Fun, CallTimeout).
 
 %% @doc Executes a mysql transaction fun. The fun needs to take one argument
 %% which is the mysql connection.
@@ -125,3 +179,28 @@ transaction(PoolName, TransactionFun, Args, Retries)
         mysql:transaction(MysqlConn, TransactionFun, [MysqlConn | Args],
                           Retries)
     end).
+
+%% @doc Executes a mysql transaction fun. The fun needs to take one argument
+%% which is the mysql connection with acquire worker timeout.
+transaction_with_call_timeout(PoolName, TransactionFun, CallTimeout) when is_function(TransactionFun, 1) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:transaction(MysqlConn, TransactionFun, [MysqlConn], infinity)
+    end, CallTimeout).
+
+%% @doc Executes a transaction fun. Args list needs be the same length as
+%% TransactionFun arity - 1 with acquire worker timeout.
+transaction_with_call_timeout(PoolName, TransactionFun, Args, CallTimeout)
+    when is_function(TransactionFun, length(Args) + 1) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:transaction(MysqlConn, TransactionFun, [MysqlConn | Args],
+                          infinity)
+    end, CallTimeout).
+
+%% @doc Same as transaction/3 but with the number of retries the mysql
+%% transaction should try to execute with acquire worker timeout.
+transaction_with_call_timeout(PoolName, TransactionFun, Args, Retries, CallTimeout)
+    when is_function(TransactionFun, length(Args) + 1) ->
+    poolboy:transaction(PoolName, fun(MysqlConn) ->
+        mysql:transaction(MysqlConn, TransactionFun, [MysqlConn | Args],
+                          Retries)
+    end, CallTimeout).
