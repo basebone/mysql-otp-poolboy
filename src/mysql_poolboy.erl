@@ -33,6 +33,7 @@
          with/2,
          with_with_call_timeout/3]).
 
+
 %% @doc Adds a pool to the started mysql_poolboy application.
 add_pool(PoolName, PoolArgs, MysqlArgs) ->
     %% We want strategy fifo as default instead of lifo.
