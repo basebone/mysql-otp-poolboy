@@ -33,4 +33,4 @@ init([]) ->
         end,
         Pools1
     ),
-    {ok, {{one_for_one, 10, 10}, PoolSpec}}.
+    {ok, {{one_for_one, 5000, 5}, PoolSpec}}.
